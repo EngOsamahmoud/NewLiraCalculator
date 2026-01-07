@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>حاسبة العملة السورية الجديدة</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @media print {
+            body > *:not(#receipt) { display: none !important; }
+            #receipt { display: block !important; width: 100%; }
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        
+        /* Centering the App Container */
+        .app-container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: #f8fafc;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body class="bg-slate-200 text-slate-900 h-screen overflow-hidden font-sans">
+
+    <div class="app-container">
+        <header class="bg-blue-900 text-white p-2 shadow-md shrink-0">
+            <h1 class="text-center font-bold text-base tracking-tight">حاسبة العملة السورية الجديدة</h1>
+            <div class="flex justify-between text-[9px] border-t border-blue-800 mt-1 pt-1 italic opacity-90 px-2">
+                <span>إجمالي قديم: <b id="totalOldSum">0</b></span>
+                <span>إجمالي جديد: <b id="totalNewSum">0</b></span>
+            </div>
+        </header>
+
+        <div class="p-2 shrink-0 grid grid-cols-3 gap-1.5">
+            <div class="bg-white p-1.5 rounded-lg border border-blue-100 flex flex-col items-center">
+                <label class="text-[8px] font-bold text-blue-600 mb-0.5">المبلغ القديم</label>
+                <input type="text" id="oldInputDisplay" class="w-full text-center text-base font-bold outline-none bg-transparent" placeholder="0">
+            </div>
+            <div class="bg-blue-50 p-1.5 rounded-lg border border-blue-100 flex flex-col items-center justify-center">
+                <label class="text-[8px] font-bold text-blue-800 mb-0.5">المستحق الجديد</label>
+                <div id="newTargetVal" class="text-base font-black text-blue-900">0</div>
+            </div>
+            <div id="statusCard" class="bg-white p-1.5 rounded-lg border border-slate-200 flex flex-col items-center justify-center transition-colors">
+                <label id="statusLabel" class="text-[8px] font-bold mb-0.5 uppercase">المتبقي</label>
+                <div id="remainingVal" class="text-base font-black">0</div>
+            </div>
+        </div>
+
+        <main class="flex-1 flex flex-col overflow-hidden px-2 gap-2 min-h-0">
+            
+            <div id="noteGrid" class="grid grid-cols-2 gap-1.5 shrink-0">
+                </div>
+
+            <div class="flex gap-1.5 shrink-0">
+                <button onclick="saveTransaction()" class="flex-1 bg-green-600 text-white font-bold py-2.5 rounded-lg shadow-md active:scale-95 text-sm flex items-center justify-center gap-2">
+                    <span>حفظ وطباعة</span> 
+                </button>
+                <button onclick="exportToCSV()" class="bg-white border border-slate-300 px-3 rounded-lg text-[10px] font-bold text-slate-600">
+                    تصدير Excel
+                </button>
+            </div>
+
+            <div class="flex-1 flex flex-col min-h-0 bg-white rounded-t-lg border border-slate-200 overflow-hidden shadow-sm">
+                <div class="bg-slate-800 text-white text-[9px] px-3 py-1 flex justify-between items-center">
+                    <span>سجل العمليات</span>
+                    <span id="logCount" class="bg-slate-600 px-2 rounded-full font-mono">0</span>
+                </div>
+                <div class="overflow-y-auto flex-1 no-scrollbar">
+                    <table class="w-full text-[10px] text-right">
+                        <thead class="sticky top-0 bg-slate-50 border-b z-10 shadow-sm">
+                            <tr>
+                                <th class="p-1.5 w-6 text-center text-slate-400">#</th>
+                                <th class="p-1.5">القديم</th>
+                                <th class="p-1.5 text-blue-700">الجديد</th>
+                                <th class="p-1.5 text-center">إجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyBody" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="receipt" class="hidden p-8 text-black bg-white font-mono" dir="rtl">
+        <center>
+            <h2 style="font-size: 18px; font-weight: bold;">حاسبة العملة السورية الجديدة</h2>
+            <hr style="border: 1px solid black; margin: 10px 0;">
+        </center>
+        <div id="rContent" style="font-size: 14px; line-height: 1.6;"></div>
+        <div style="margin-top: 20px; border-top: 1px dashed black; padding-top: 10px; font-size: 10px;">
+            <p>التاريخ: <span id="rDate"></span></p>
+        </div>
+    </div>
+
+    <script>
+        const notes = [500, 200, 100, 50, 25, 10];
+        let counts = { 500: 0, 200: 0, 100: 0, 50: 0, 25: 0, 10: 0 };
+        let history = [];
+
+        const oldInput = document.getElementById('oldInputDisplay');
+        oldInput.addEventListener('input', function(e) {
+            let cursor = e.target.selectionStart;
+            let originalLength = e.target.value.length;
+            let rawValue = e.target.value.replace(/,/g, '');
+            if (rawValue === "") { e.target.value = ""; updateUI(); return; }
+            let formattedValue = Number(rawValue).toLocaleString('en-US');
+            e.target.value = formattedValue;
+            let newLength = formattedValue.length;
+            cursor = cursor + (newLength - originalLength);
+            e.target.setSelectionRange(cursor, cursor);
+            updateUI();
+        });
+
+        function getRawValue() { return parseFloat(oldInput.value.replace(/,/g, '')) || 0; }
+
+        function renderGrid() {
+            const container = document.getElementById('noteGrid');
+            container.innerHTML = notes.map(note => `
+                <div class="bg-white border border-slate-200 p-1.5 rounded-lg flex flex-col items-center">
+                    <span class="text-[9px] font-bold text-blue-800">فئة ${note}</span>
+                    <div class="flex items-center gap-1.5 mt-1">
+                        <button onclick="changeCount(${note}, -1)" class="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded-md text-sm font-bold">-</button>
+                        <input type="number" value="${counts[note]}" 
+                            oninput="manualInput(${note}, this.value)"
+                            class="w-10 text-center font-bold bg-transparent outline-none text-sm">
+                        <button onclick="changeCount(${note}, 1)" class="w-7 h-7 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-bold">+</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function changeCount(note, delta) {
+            counts[note] = Math.max(0, counts[note] + delta);
+            updateUI(true);
+        }
+
+        function manualInput(note, val) {
+            counts[note] = Math.max(0, parseInt(val) || 0);
+            updateUI(false); 
+        }
+
+        function updateUI(shouldRenderGrid = true) {
+            const rawOld = getRawValue();
+            const target = Math.floor(rawOld / 100);
+            const currentTotal = notes.reduce((sum, note) => sum + (counts[note] * note), 0);
+            const diff = target - currentTotal;
+
+            document.getElementById('newTargetVal').innerText = target.toLocaleString();
+            const remVal = document.getElementById('remainingVal');
+            const statusCard = document.getElementById('statusCard');
+
+            if (diff === 0 && target > 0) {
+                remVal.innerText = "متطابق";
+                statusCard.className = "bg-green-600 text-white p-1.5 rounded-lg flex flex-col items-center justify-center";
+            } else if (diff < 0) {
+                remVal.innerText = Math.abs(diff).toLocaleString();
+                statusCard.className = "bg-red-500 text-white p-1.5 rounded-lg flex flex-col items-center justify-center";
+            } else {
+                remVal.innerText = diff.toLocaleString();
+                statusCard.className = "bg-white p-1.5 rounded-lg border border-slate-200 flex flex-col items-center justify-center";
+            }
+            if (shouldRenderGrid) renderGrid();
+        }
+
+        function saveTransaction() {
+            const rawOld = getRawValue();
+            if (rawOld <= 0) return;
+            const target = Math.floor(rawOld / 100);
+            const entry = { id: Date.now(), old: rawOld, new: target, breakdown: {...counts}, time: new Date().toLocaleString('ar-SY') };
+            history.unshift(entry);
+            updateHistoryTable();
+            calculateDailyTotals();
+            printRow(entry.id);
+            resetFields();
+        }
+
+        function updateHistoryTable() {
+            const body = document.getElementById('historyBody');
+            document.getElementById('logCount').innerText = history.length;
+            body.innerHTML = history.map((item, index) => `
+                <tr class="border-b">
+                    <td class="p-1.5 text-center text-slate-400 font-mono">${history.length - index}</td>
+                    <td class="p-1.5 font-bold">${item.old.toLocaleString()}</td>
+                    <td class="p-1.5 text-blue-700 font-bold">${item.new.toLocaleString()}</td>
+                    <td class="p-1.5 flex justify-center gap-1">
+                        <button onclick="printRow(${item.id})" class="text-blue-600 hover:underline px-1">وصل</button>
+                        <button onclick="deleteRow(${item.id})" class="text-red-400 hover:underline px-1">حذف</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function printRow(id) {
+            const item = history.find(i => i.id === id);
+            document.getElementById('rDate').innerText = item.time;
+            let html = `<div style="display:flex; justify-content:space-between"><span>قديم:</span> <b>${item.old.toLocaleString()}</b></div>`;
+            html += `<div style="display:flex; justify-content:space-between; border-bottom: 2px solid black;"><span>جديد:</span> <b>${item.new.toLocaleString()}</b></div><br>`;
+            for(let n in item.breakdown) if(item.breakdown[n] > 0) html += `<div style="display:flex; justify-content:space-between"><span>فئة ${n}:</span> <span>${item.breakdown[n]} ورقة نقدية</span></div>`;
+            document.getElementById('rContent').innerHTML = html;
+            window.print();
+        }
+
+        function deleteRow(id) {
+            if(confirm("حذف؟")) {
+                history = history.filter(i => i.id !== id);
+                updateHistoryTable();
+                calculateDailyTotals();
+            }
+        }
+
+        function exportToCSV() {
+            if (history.length === 0) return;
+            let csv = "ID,Time,Old SYP,New SYP\n";
+            history.forEach((h, i) => { csv += `${history.length - i},${h.time},${h.old},${h.new}\n`; });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.setAttribute('href', url);
+            a.setAttribute('download', `Daily_Log.csv`);
+            a.click();
+        }
+
+        function calculateDailyTotals() {
+            document.getElementById('totalOldSum').innerText = history.reduce((s, i) => s + i.old, 0).toLocaleString();
+            document.getElementById('totalNewSum').innerText = history.reduce((s, i) => s + i.new, 0).toLocaleString();
+        }
+
+        function resetFields() {
+            counts = { 500: 0, 200: 0, 100: 0, 50: 0, 25: 0, 10: 0 };
+            oldInput.value = '';
+            updateUI(true);
+        }
+
+        renderGrid();
+    </script>
+</body>
+</html>
